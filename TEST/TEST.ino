@@ -60,8 +60,9 @@ boolean T_course_complete = false;
 boolean Avoidance_complete = false;
 
 // 지나간 정지선의 개수
-unsigned int stop_line_count = 0;
+unsigned int stop_line_count = 4;
 // =======================================================================
+int rightCNT = 0, leftCNT = 0;
 
 // 초음파 거리측정
 float GetDistance(int trig, int echo)
@@ -196,6 +197,11 @@ void parking_start_Parallel() {
   Parallel_parking_complete = true;
   return;
 }
+void StopLineDelay() {
+  SetSpeed(0);
+  SetSteering(0);
+  delay(1500);
+}
 void turn_left_fixed() {
   SetSteering(0);
   SetSpeed(0.1);
@@ -212,11 +218,37 @@ void T_course() {
   delay(1000);
   turn_left_fixed();
   while (!(digitalRead(IR_R) != detect_ir && digitalRead(IR_L) != detect_ir)) {
-    SetSpeed(-0.5);
+    SetSpeed(-0.5); //!정지선
   }
   SetSpeed(0);
   //T_course 완료
   T_course_complete = true;
+}
+void Avoidance_driving() {
+  StopLineDelay();
+  SetSpeed(0.1);
+  while (true) {
+    right = GetDistance(R_TRIG, R_ECHO);
+    center = GetDistance(FC_TRIG, FC_ECHO);
+    if (center <= 150) {
+      compute_steering = compute_steering - 0.2;
+    }
+    SetSteering(compute_steering);
+    if (right <= 100) {
+      SetSteering(0);
+      break;
+    }
+  }
+  Avoidance_complete = true;
+}
+void TooMuchCorner(int rightCNT, int leftCNT) {
+  int critical_value = 10;
+  if (rightCNT >= critical_value || leftCNT >= critical_value) {
+    SetSteering(0);
+    SetSpeed(-1);
+    delay(300);
+  }
+  else return;
 }
 void setup() {
 
@@ -251,8 +283,8 @@ void setup() {
 }
 
 void loop() {
-  right = GetDistance(R_TRIG, R_ECHO);
-  Serial.print("right : ");
-  Serial.println(right);
+  center = GetDistance(FC_TRIG, FC_ECHO);
+  Serial.print("center : ");
+  Serial.println(center);
   delay(500);
 }

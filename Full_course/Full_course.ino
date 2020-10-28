@@ -61,6 +61,10 @@ boolean Avoidance_complete = false;
 
 // 지나간 정지선의 개수
 unsigned int stop_line_count = 0;
+// 회전 역주행count
+int rightCNT = 0, leftCNT = 0;
+// 평행후진을 위한 flag
+boolean sensingWall = false;
 // =======================================================================
 
 // 초음파 거리측정
@@ -171,6 +175,30 @@ void SetSpeed(float speed)                //0.1의 값, 1의 값
   cur_speed = speed;
 }
 // 추가한 함수들 ==========================================================
+void TooMuchCorner(int critical_value, int rightCNT, int leftCNT) {
+  if (rightCNT >= critical_value || leftCNT >= critical_value) {
+    SetSteering(0);
+    SetSpeed(-1);
+    delay(400);
+    rightCNT = 0; leftCNT = 0;
+  }
+  else return;
+}
+void TooMuchCornerForTcourse(int critical_value, int rightCNT, int leftCNT) {
+  if (rightCNT >= critical_value) {
+    SetSteering(1);
+    SetSpeed(-1);
+    delay(150);
+    rightCNT = 0;
+  }
+  else if (leftCNT >= critical_value) {
+    SetSteering(-1);
+    SetSpeed(-1);
+    delay(150);
+    leftCNT = 0;
+  }
+  else return;
+}
 void parking_start_Parallel() {
   SetSpeed(0); delay(1500);        //완전히 정차 후 주차시작
   SetSteering(1);                  //오른쪽으로 바퀴정렬
@@ -262,12 +290,72 @@ void StopLineDelay() {
   SetSteering(0);
   delay(1500);
 }
+/*
+void SetParallel() { //실효성 없음, 폐기.
+  left = GetDistance(L_TRIG, L_ECHO);
+  right = GetDistance(R_TRIG, R_ECHO);
+  while (right <= 150) {
+    compute_steering = cur_steering;
+    if (left > right) {
+      compute_steering = compute_steering - 0.1;
+    }
+    else if (right > left) {
+      compute_steering = compute_steering + 0.1;
+    }
+    left = GetDistance(L_TRIG, L_ECHO);
+    right = GetDistance(R_TRIG, R_ECHO);
+    SetSteering(compute_steering);
+    delay(50);
+  }
+  SetSteering(0);
+  sensingWall = true;
+}
+*/
+void turnLeftFixed_neo() {
+  SetSteering(0);
+  SetSpeed(0.2);
+  //delay(200);
+  SetSteering(-1);
+  delay(1500);
+  SetSteering(0);
+  // 정지선이 아니라면
+  while (!(digitalRead(IR_R) != detect_ir && digitalRead(IR_L) != detect_ir)) {
+    Serial.println("while문 실행됨");
+    // 직진차선
+    if (digitalRead(IR_R) == detect_ir && digitalRead(IR_L) == detect_ir) {
+      rightCNT = 0; leftCNT = 0;
+      compute_steering = 0; //바퀴정렬
+      compute_speed = 0.5;    //속도 1
+    }
+    // 오른쪽 차선이 검출된 경우
+    else if (digitalRead(IR_R) != detect_ir) { 
+      leftCNT = 0;
+      compute_steering = -1;//왼쪽으로 바퀴정렬
+      compute_speed = 0.1;  //속도 0.1
+      rightCNT++;
+    }
+    //왼쪽 차선이 검출된 경우
+    else if (digitalRead(IR_L) != detect_ir) { 
+      rightCNT = 0;
+      compute_steering = 1; //오른쪽으로 바퀴정렬
+      compute_speed = 0.1;  //속도 0.1
+      leftCNT++;
+    }            
+    SetSteering(compute_steering);
+    SetSpeed(compute_speed);
+    delay(50);
+    TooMuchCornerForTcourse(3, rightCNT, leftCNT);
+  }
+  SetSpeed(-1);
+  SetSteering(0);
+  delay(100);
+}
 void turn_left_fixed() {
   SetSteering(0);
   SetSpeed(0.1);
-  delay(220); //350->220
+  delay(270); //350->220-<270
   SetSteering(-1);
-  delay(2490);
+  delay(2550); // 회전 각도
   SetSteering(0);
   SetSpeed(0);
   delay(500);
@@ -278,8 +366,11 @@ void T_course() {
   SetSpeed(0); // 1초간 정차
   SetSteering(0);
   delay(1000);
+  //turnLeftFixed_neo();
   turn_left_fixed();
+  StopLineDelay();
   while (!(digitalRead(IR_R) != detect_ir && digitalRead(IR_L) != detect_ir)) {
+    SetSteering(0);
     SetSpeed(-0.5);
   }
   SetSpeed(0); //T_course 주차완료
@@ -288,22 +379,39 @@ void T_course() {
   delay(500);
   //T_course 탈출주행
   T_course_complete = true;
-  stop_line_count = 4;
 }
 void Avoidance_driving() {
+  Serial.print("Avoidance_driving()\n");
+  StopLineDelay();
   while (true) {
     center = GetDistance(FC_TRIG, FC_ECHO);
-    if (center <= 220) {
-      
-      SetSteering(-1);
-      delay(500);
-    }
-    else if (digitalRead(IR_L) != detect_ir) {
-      Avoidance_complete = true;
-      return;
+    if (center <= 23 0) break;
+    else {
+      SetSteering(0);
+      SetSpeed(0.5);
     }
   }
+  SetSteering(-1);
+  SetSpeed(1);
+  delay(500);
+  /*
+  SetSpeed(0.1);
+  while (true) {
+    right = GetDistance(R_TRIG, R_ECHO);
+    center = GetDistance(FC_TRIG, FC_ECHO);
+    if (center <= 250) {
+      compute_steering = compute_steering - 0.2;
+    }
+    else if (digitalRead(IR_L) != detect_ir) {
+      SetSteering(0);
+      break;
+    }
+    SetSteering(compute_steering);
+  }
+  */
+  Avoidance_complete = true;
 }
+
 //=======================================================================
 
 void setup() {
@@ -359,6 +467,7 @@ void loop() {
   
   // 양쪽 차선이 모두 검출된 경우(정지선)//stop_line_count : 지나온 정지선의 개수
   if (digitalRead(IR_R) != detect_ir && digitalRead(IR_L) != detect_ir) {
+    rightCNT = 0; leftCNT = 0;
     Serial.print("stop_line_count : ");
     Serial.println(stop_line_count);
     SetSpeed(0);
@@ -378,21 +487,30 @@ void loop() {
     SetSteering(0);
     return;
   }
-  // 직진차선
+  //직진차선
   else if (digitalRead(IR_R) == detect_ir && digitalRead(IR_L) == detect_ir) {
+    rightCNT = 0; leftCNT = 0;
     compute_steering = 0; //바퀴정렬
     compute_speed = 1;    //속도 1
   }
   // 오른쪽 차선이 검출된 경우
   else if (digitalRead(IR_R) != detect_ir) { 
+    leftCNT = 0;
     compute_steering = -1;//왼쪽으로 바퀴정렬
     compute_speed = 0.1;  //속도 0.1
+    rightCNT++;
   }
   //왼쪽 차선이 검출된 경우
   else if (digitalRead(IR_L) != detect_ir) { 
+    rightCNT = 0;
     compute_steering = 1; //오른쪽으로 바퀴정렬
     compute_speed = 0.1;  //속도 0.1
+    leftCNT++;
   }
+  if (!Avoidance_complete) { //교차로
+    TooMuchCorner(10, rightCNT, leftCNT);
+  }
+  else TooMuchCorner(3, rightCNT, leftCNT);//회피주행 후
   SetSpeed(compute_speed);
   SetSteering(compute_steering);
   delay(50);
