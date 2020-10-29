@@ -39,7 +39,7 @@ int stop_time = 300; // 전진후진 전환 시간 (단위 msec)
 int max_ai_pwm = 110; // 자율주행 모터 최대 출력 (0 ~ 255)
 int min_ai_pwm = 70;  // 자율주행 모터 최소 출력 (0 ~ 255)
 
-int angle_offset = 6; // 서보 모터 중앙각 오프셋 (단위: 도)
+int angle_offset = 6; // 서보 모터 중앙각 오프셋 (단위: 도)0->6->7
 //마이너스 값에서 바퀴가 왼쪽으로 정렬되고 플러스 값에서 오른쪽으로 정렬됨
 int angle_limit = 55; // 서보 모터 회전 제한 각 (단위: 도) 
 //========================================================================
@@ -203,9 +203,13 @@ void parking_start_Parallel() {
   SetSpeed(0); delay(1500);        //완전히 정차 후 주차시작
   SetSteering(1);                  //오른쪽으로 바퀴정렬
   SetSpeed(-1);
-  delay(900);     //오른쪽 후진으로 0.9초
+  delay(1000);     //오른쪽 후진으로 0.9초
   SetSteering(-1);
-  delay(900);     //왼쪽 후진으로 0.9초 //아마 초음파센서 추가활용가능성\
+  delay(1000);     //왼쪽 후진으로 0.9초 //아마 초음파센서 추가활용가능성\
+  
+  SetSteering(0);   //좀 더 후진
+  SetSpeed(-1);
+  delay(250);
   
   SetSteering(0);
   SetSpeed(0);
@@ -214,9 +218,9 @@ void parking_start_Parallel() {
   //코스로 복귀
   SetSteering(-1);
   SetSpeed(1);
-  delay(765);
+  delay(915);
   SetSteering(1);
-  delay(800);
+  delay(600);
   SetSteering(0);
   Parallel_parking_complete = true;
   return;
@@ -311,7 +315,86 @@ void SetParallel() { //실효성 없음, 폐기.
   sensingWall = true;
 }
 */
+void SetParallel_neo() { //오른벽을 기준으로 안전범위내 이동 65~110
+  Serial.println("SetParallel_neo()가 실행됨");
+  while (!(digitalRead(IR_R) != detect_ir && digitalRead(IR_L) != detect_ir)) {
+    compute_steering = cur_steering;
+    compute_speed = cur_speed;
+    right = GetDistance(R_TRIG, R_ECHO);
+    if (right <= 88) {
+      Serial.println("좁음");
+      SetSpeed(-0.2);
+      SetSteering(-1);
+      delay(80);
+      SetSteering(1);
+      delay(40);
+      SetSteering(0);
+      //compute_steering = compute_steering - 0.1;
+      //compute_speed = -0.2;
+    }
+    else if (right > 88) {
+      Serial.println("넓음");
+      SetSpeed(-0.2);
+      SetSteering(1);
+      delay(80);
+      SetSteering(-1);
+      delay(40);
+      SetSteering(0);
+      //compute_steering = compute_steering + 0.1;
+      //compute_speed = -0.2;
+    }
+    /*
+    else {
+      Serial.println("적당");
+      compute_steering = 0;
+      compute_speed = -0.5;
+    }
+    */
+    SetSpeed(compute_speed);
+    SetSteering(compute_steering);
+    delay(200);
+    SetSteering(0);
+    delay(200);
+  }
+}
+void SetParallel_neo_2() {
+  float input_data[6];
+  float average_data[2];
+  float error_range = 8;
+  int input_index = 0; //0~6
+  while (!(digitalRead(IR_R) != detect_ir && digitalRead(IR_L) != detect_ir)) {
+    compute_steering = cur_steering;
+    right = GetDistance(R_TRIG, R_ECHO);
+    if (right >- 200) right = 88; //지나친 값 조정
+    input_data[input_index % 6] = right;
+    average_data[0] = (input_data[0] + input_data[1] + input_data[2]) / 3;
+    average_data[1] = (input_data[3] + input_data[4] + input_data[5]) / 3;
+    input_index++;
+    SetSpeed(-0.5);
+    if (average_data[0] < average_data[1] && average_data[0] < average_data[1] - error_range) { //오른벽이랑 멀어지는 중
+      compute_steering = compute_steering + 0.1;
+    }
+    else if (average_data[0] > average_data[1] && average_data[0] > average_data[1] - error_range) { //오른벽이랑 가까워지는 중
+      compute_steering = compute_steering - 0.1;
+    }
+    else { //오차범위내 평행
+      compute_steering = 0;
+    }
+    SetSteering(compute_steering);
+    delay(50);
+  }
+}
 void turnLeftFixed_neo() {
+  while (true) {
+    center = GetDistance(FC_TRIG, FC_ECHO);
+    SetSteering(0);
+    SetSpeed(0.2);
+    if (center <= 80) break;
+  }
+  SetSteering(1);
+  SetSpeed(-0.2);
+  delay(400);
+  
   SetSteering(0);
   SetSpeed(0.2);
   //delay(200);
@@ -366,13 +449,22 @@ void T_course() {
   SetSpeed(0); // 1초간 정차
   SetSteering(0);
   delay(1000);
-  //turnLeftFixed_neo();
-  turn_left_fixed();
+  turnLeftFixed_neo();
+  //turn_left_fixed();
   StopLineDelay();
+  Serial.println("print");
+  //SetParallel_neo();
+  //SetParallel_neo_2();
+  
   while (!(digitalRead(IR_R) != detect_ir && digitalRead(IR_L) != detect_ir)) {
+    if (digitalRead(IR_R) != detect_ir) {
+      SetSteering(1);
+      delay(250);
+    }
     SetSteering(0);
     SetSpeed(-0.5);
   }
+  
   SetSpeed(0); //T_course 주차완료
   delay(2000);
   SetSpeed(1);
@@ -385,7 +477,7 @@ void Avoidance_driving() {
   StopLineDelay();
   while (true) {
     center = GetDistance(FC_TRIG, FC_ECHO);
-    if (center <= 23 0) break;
+    if (center <= 230) break;
     else {
       SetSteering(0);
       SetSpeed(0.5);
@@ -393,7 +485,7 @@ void Avoidance_driving() {
   }
   SetSteering(-1);
   SetSpeed(1);
-  delay(500);
+  delay(750);
   /*
   SetSpeed(0.1);
   while (true) {
@@ -476,13 +568,13 @@ void loop() {
     switch (stop_line_count) {
       case 0: parallel_parking(); stop_line_count++; break;
       case 1: StopLineDelay(); stop_line_count++; break;
-      case 2: StopLineDelay(); stop_line_count++; break;
+      case 2: StopLineDelay(); max_ai_pwm = 110; stop_line_count++; break;
       case 3: T_course(); stop_line_count++; break;
       case 4: Avoidance_driving(); stop_line_count++; break; //회피주행 break;
       default: StopLineDelay();
     }
   }
-  else if ((stop_line_count >= 5) && (center <= 120)) { //종료주차
+  else if ((stop_line_count >= 5) && (center <= 80)) { //종료주차
     SetSpeed(0);
     SetSteering(0);
     return;

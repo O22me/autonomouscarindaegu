@@ -48,10 +48,10 @@ void loop()
 
   Serial.print("center : ");
   Serial.print(center);
-  Serial.print("  left : ");
+  Serial.print("\tleft : ");
   Serial.print(left);
-  Serial.print("  right : ");
+  Serial.print("\tright : ");
   Serial.println(right);
 
-  delay(100);
+  delay(40);
 }
